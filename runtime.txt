@@ -7,4 +7,4 @@ from common.analytics import show_platform
 if st.button("← Ana Sayfaya Dön"):
     st.session_state.active_app = "home"
     st.rerun()
-show_platform("Trendyol")
+show_platform("Hepsiburada")
