@@ -22,14 +22,18 @@ PASSWORD = "1234"
 
 st.markdown("""
 <style>
-/* =========================
-   IQIBLA ESKİ ARAYÜZ / GOLD BLACK THEME
-   ========================= */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif;
+}
+
 .stApp {
     background:
-        radial-gradient(circle at 18% 12%, rgba(212, 175, 55, 0.18), transparent 28%),
-        radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.06), transparent 25%),
-        linear-gradient(135deg, #050505 0%, #111111 48%, #050505 100%);
+        radial-gradient(circle at 12% 8%, rgba(212,175,55,0.20), transparent 25%),
+        radial-gradient(circle at 86% 12%, rgba(255,255,255,0.07), transparent 23%),
+        radial-gradient(circle at 50% 90%, rgba(212,175,55,0.08), transparent 36%),
+        linear-gradient(135deg, #050505 0%, #101010 48%, #050505 100%);
     color: #ffffff;
 }
 
@@ -38,112 +42,172 @@ header { visibility: hidden; }
 footer { visibility: hidden; }
 
 .block-container {
-    max-width: 1450px;
-    padding-top: 2rem;
+    max-width: 1500px;
+    padding-top: 1.4rem;
     padding-bottom: 3rem;
 }
 
-.iq-hero {
+/* Sidebar tamamen kapalı */
+[data-testid="stSidebar"] {
+    display: none;
+}
+
+/* Hero */
+.modern-hero {
+    position: relative;
+    overflow: hidden;
     background:
-        linear-gradient(135deg, rgba(12,12,12,0.92), rgba(28,28,28,0.84)),
-        radial-gradient(circle at top right, rgba(212,175,55,0.20), transparent 35%);
-    border: 1px solid rgba(212,175,55,0.38);
-    box-shadow: 0 28px 90px rgba(0,0,0,0.55);
-    border-radius: 32px;
+        linear-gradient(135deg, rgba(14,14,14,0.94), rgba(30,30,30,0.78)),
+        radial-gradient(circle at 92% 10%, rgba(212,175,55,0.25), transparent 34%);
+    border: 1px solid rgba(212,175,55,0.30);
+    box-shadow: 0 28px 95px rgba(0,0,0,0.55);
+    border-radius: 34px;
     padding: 34px 38px;
-    margin-bottom: 24px;
+    margin-bottom: 20px;
     backdrop-filter: blur(18px);
 }
 
-.iq-title {
-    color: #ffffff;
-    font-size: 44px;
-    font-weight: 900;
-    letter-spacing: 0.4px;
-    margin-bottom: 8px;
+.modern-hero:after {
+    content: "";
+    position: absolute;
+    right: -85px;
+    top: -85px;
+    width: 280px;
+    height: 280px;
+    border-radius: 999px;
+    background: rgba(212,175,55,0.12);
+    filter: blur(4px);
 }
 
-.iq-subtitle {
-    color: rgba(255,255,255,0.76);
-    font-size: 17px;
-    line-height: 1.55;
-    max-width: 950px;
-}
-
-.iq-gold-line {
-    width: 180px;
-    height: 3px;
-    background: linear-gradient(90deg, transparent, #d4af37, transparent);
-    margin-top: 20px;
-    border-radius: 99px;
-}
-
-.iq-card {
-    background: rgba(255,255,255,0.058);
-    border: 1px solid rgba(212,175,55,0.24);
-    border-radius: 24px;
-    padding: 22px;
-    min-height: 150px;
-    box-shadow: 0 18px 42px rgba(0,0,0,0.26);
-}
-
-.iq-card h3 {
-    color: #ffffff;
-    font-size: 22px;
-    margin-bottom: 10px;
-}
-
-.iq-card p {
-    color: rgba(255,255,255,0.68);
-    font-size: 14px;
-    line-height: 1.45;
-}
-
-.iq-chip {
-    display: inline-block;
-    padding: 7px 12px;
+.modern-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 13px;
     border: 1px solid rgba(212,175,55,0.38);
     border-radius: 999px;
     color: #d4af37;
-    background: rgba(212,175,55,0.08);
-    font-weight: 700;
+    background: rgba(212,175,55,0.085);
+    font-weight: 900;
     font-size: 12px;
-    margin-bottom: 12px;
+    letter-spacing: .35px;
+    margin-bottom: 14px;
 }
 
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #060606 0%, #131313 100%);
-    border-right: 1px solid rgba(212,175,55,0.20);
+.modern-title {
+    color: #ffffff;
+    font-size: 46px;
+    font-weight: 950;
+    letter-spacing: -1px;
+    line-height: 1.06;
+    margin-bottom: 10px;
 }
 
+.modern-subtitle {
+    color: rgba(255,255,255,0.72);
+    font-size: 16px;
+    line-height: 1.6;
+    max-width: 960px;
+}
+
+/* Top navigation */
+.nav-wrap {
+    background: rgba(255,255,255,0.048);
+    border: 1px solid rgba(212,175,55,0.18);
+    border-radius: 28px;
+    padding: 16px;
+    margin-bottom: 22px;
+    box-shadow: 0 18px 48px rgba(0,0,0,0.24);
+}
+
+/* Cards */
+.modern-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+    margin-bottom: 22px;
+}
+
+.modern-card {
+    background: rgba(255,255,255,0.058);
+    border: 1px solid rgba(212,175,55,0.18);
+    border-radius: 26px;
+    padding: 20px;
+    min-height: 148px;
+    box-shadow: 0 18px 48px rgba(0,0,0,0.24);
+    transition: all .18s ease;
+}
+
+.modern-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(212,175,55,0.42);
+    background: rgba(255,255,255,0.075);
+}
+
+.modern-card h3 {
+    color: #ffffff;
+    font-size: 20px;
+    font-weight: 850;
+    margin: 6px 0 8px 0;
+}
+
+.modern-card p {
+    color: rgba(255,255,255,0.68);
+    font-size: 13px;
+    line-height: 1.46;
+    margin: 0;
+}
+
+.modern-icon {
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(212,175,55,0.24), rgba(212,175,55,0.08));
+    border: 1px solid rgba(212,175,55,0.24);
+    font-size: 22px;
+}
+
+/* Metrics */
 [data-testid="stMetric"] {
     background: rgba(255,255,255,0.060);
-    border: 1px solid rgba(212,175,55,0.24);
-    border-radius: 18px;
-    padding: 15px;
-    box-shadow: 0 12px 30px rgba(0,0,0,0.22);
+    border: 1px solid rgba(212,175,55,0.20);
+    border-radius: 20px;
+    padding: 16px;
+    box-shadow: 0 16px 38px rgba(0,0,0,0.22);
 }
 
+[data-testid="stMetricLabel"] {
+    color: rgba(255,255,255,0.70) !important;
+}
+
+[data-testid="stMetricValue"] {
+    color: #ffffff !important;
+    font-weight: 850;
+}
+
+/* Buttons */
 div.stButton > button {
-    border-radius: 15px;
-    border: 1px solid rgba(212,175,55,0.62);
-    background: linear-gradient(135deg, #d4af37, #a77916);
+    border-radius: 17px;
+    border: 1px solid rgba(212,175,55,0.58);
+    background: linear-gradient(135deg, #d4af37, #a97815);
     color: #111111;
     font-weight: 900;
-    min-height: 46px;
+    min-height: 48px;
+    box-shadow: 0 14px 36px rgba(212,175,55,0.18);
 }
 
 div.stButton > button:hover {
     border-color: #ffffff;
     color: #000000;
-    box-shadow: 0 0 24px rgba(212,175,55,0.36);
+    box-shadow: 0 0 28px rgba(212,175,55,0.36);
+    transform: translateY(-1px);
 }
 
-[data-testid="stDataFrame"] {
-    border-radius: 18px;
-    overflow: hidden;
-}
-
+/* Tabs and dataframes */
 .stTabs [data-baseweb="tab-list"] {
     gap: 10px;
 }
@@ -153,10 +217,35 @@ div.stButton > button:hover {
     border-radius: 14px;
     border: 1px solid rgba(212,175,55,0.16);
     color: white;
+    padding: 10px 16px;
+}
+
+[data-testid="stDataFrame"] {
+    border-radius: 18px;
+    overflow: hidden;
 }
 
 .stAlert {
-    border-radius: 16px;
+    border-radius: 18px;
+}
+
+input, textarea {
+    border-radius: 14px !important;
+}
+
+@media (max-width: 1150px) {
+    .modern-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .modern-title {
+        font-size: 36px;
+    }
+}
+
+@media (max-width: 700px) {
+    .modern-grid {
+        grid-template-columns: 1fr;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -709,60 +798,89 @@ Kanal katkısı:
 Not: Shopify Ad Revenue toplama katılmadı.
 """)
 
+
 # =========================
-# UYGULAMA
+# UYGULAMA — MODERN TEK SAYFA NAVİGASYON
 # =========================
+
+if "active_page" not in st.session_state:
+    st.session_state.active_page = "Ana Sayfa"
+
+def set_page(name: str):
+    st.session_state.active_page = name
+    st.rerun()
+
 st.markdown("""
-<div class="iq-hero">
-    <div class="iq-chip">IQIBLA TÜRKİYE • SMARTEK360</div>
-    <div class="iq-title">E-Ticaret Analiz Paneli</div>
-    <div class="iq-subtitle">
-        Trendyol, Shopify, Hepsiburada, Kreatif Takibi ve Yapay Zeka raporları tek panelde.
-        Manuel günlük satış ve reklam girişi hesaplamalara otomatik eklenir.
+<div class="modern-hero">
+    <div class="modern-chip">⚡ IQIBLA TÜRKİYE • SMARTEK360</div>
+    <div class="modern-title">Modern E-Ticaret<br>Kontrol Merkezi</div>
+    <div class="modern-subtitle">
+        Trendyol, Shopify, Hepsiburada, Kreatif Takibi ve Yapay Zeka raporlarını tek ekranda yönet.
+        Yan menü yok; aşağıdaki kartlara basarak sayfalar arasında geçiş yap.
     </div>
-    <div class="iq-gold-line"></div>
 </div>
 """, unsafe_allow_html=True)
 
-page = st.sidebar.radio(
-    "Sayfa",
-    ["Ana Sayfa", "Trendyol", "Shopify", "Hepsiburada", "Kreatif", "Yapay Zeka"]
-)
+st.markdown('<div class="nav-wrap">', unsafe_allow_html=True)
+n1, n2, n3, n4, n5, n6 = st.columns(6)
+with n1:
+    if st.button("🏠 Ana Sayfa", use_container_width=True):
+        set_page("Ana Sayfa")
+with n2:
+    if st.button("🟠 Trendyol", use_container_width=True):
+        set_page("Trendyol")
+with n3:
+    if st.button("🟣 Shopify", use_container_width=True):
+        set_page("Shopify")
+with n4:
+    if st.button("🔵 Hepsiburada", use_container_width=True):
+        set_page("Hepsiburada")
+with n5:
+    if st.button("🎨 Kreatif", use_container_width=True):
+        set_page("Kreatif")
+with n6:
+    if st.button("🤖 Yapay Zeka", use_container_width=True):
+        set_page("Yapay Zeka")
+st.markdown('</div>', unsafe_allow_html=True)
+
+page = st.session_state.active_page
 
 if page == "Ana Sayfa":
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown("""
-        <div class="iq-card">
-            <div class="iq-chip">SATIŞ KANALLARI</div>
-            <h3>Trendyol • Shopify • Hepsiburada</h3>
-            <p>Her kanalın Total Revenue, sipariş adedi, ürün adedi, AOV ve kâr bilgileri ayrı ayrı hesaplanır.</p>
+    st.markdown("""
+    <div class="modern-grid">
+        <div class="modern-card">
+            <div class="modern-icon">🟠</div>
+            <h3>Trendyol</h3>
+            <p>Sipariş, ciro, ürün adedi, reklam harcaması ve manuel mağaza girişi.</p>
         </div>
-        """, unsafe_allow_html=True)
-    with c2:
-        st.markdown("""
-        <div class="iq-card">
-            <div class="iq-chip">MANUEL GİRİŞ</div>
-            <h3>Günlük Mağaza Verisi</h3>
-            <p>Her gün mağaza bazında ürün adedi, sipariş adedi, net ciro ve reklam harcaması girebilirsin.</p>
+        <div class="modern-card">
+            <div class="modern-icon">🟣</div>
+            <h3>Shopify</h3>
+            <p>Shopify Total Revenue, Meta harcaması, maliyet ve kâr analizi.</p>
         </div>
-        """, unsafe_allow_html=True)
-    with c3:
-        st.markdown("""
-        <div class="iq-card">
-            <div class="iq-chip">YAPAY ZEKA</div>
-            <h3>Toplam Rapor Yorumu</h3>
-            <p>Yapay Zeka toplam ciroyu Shopify + Trendyol + Hepsiburada olarak toplar. Shopify Ad Revenue kullanılmaz.</p>
+        <div class="modern-card">
+            <div class="modern-icon">🔵</div>
+            <h3>Hepsiburada</h3>
+            <p>Hepsiburada satış raporu, ürün performansı ve reklam verileri.</p>
         </div>
-        """, unsafe_allow_html=True)
-
-    st.divider()
+        <div class="modern-card">
+            <div class="modern-icon">🎨</div>
+            <h3>Kreatif</h3>
+            <p>Kreatif raporları ve Meta performansını ayrı analiz et.</p>
+        </div>
+        <div class="modern-card">
+            <div class="modern-icon">🤖</div>
+            <h3>Yapay Zeka</h3>
+            <p>Toplam ciro, reklam harcaması, kârlılık ve kanal katkısını yorumla.</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Aktif Panel", "5")
-    k2.metric("Şifreli Giriş", "Aktif")
+    k1.metric("Aktif Modül", "5")
+    k2.metric("Navigasyon", "Kartlı")
     k3.metric("Manuel Giriş", "Aktif")
-    k4.metric("Dosya Okuma", "CSV / XLSX")
+    k4.metric("Veri Formatı", "CSV / XLSX")
 
     st.subheader("Bulunan Veri Dosyaları")
     st.dataframe(
