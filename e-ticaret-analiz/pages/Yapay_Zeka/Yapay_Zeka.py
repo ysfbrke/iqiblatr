@@ -75,6 +75,17 @@ st.markdown(
             border-radius: 18px;
             padding: 14px;
         }
+        [data-testid="stMetricValue"] {
+            white-space: normal !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
+            font-size: 1.35rem !important;
+            line-height: 1.18 !important;
+            word-break: break-word !important;
+        }
+        [data-testid="stMetricLabel"] {
+            white-space: normal !important;
+        }
     </style>
     """,
     unsafe_allow_html=True,
@@ -1278,7 +1289,35 @@ if include_creative_in_finance and not creative.empty:
 # =========================================================
 # METRICS / SUMMARIES
 # =========================================================
-total_revenue = float(orders["net_sales"].sum()) if not orders.empty else float(lines["line_revenue"].sum()) if not lines.empty else 0.0
+# Net Ciro artık panellerde gördüğün "Total Revenue" mantığıyla hesaplanır:
+# Her platform için önce ürün/satır gelirleri (line_revenue) toplanır.
+# Bir platformda satır geliri yoksa, sipariş bazlı net_sales yedek olarak kullanılır.
+# Böylece Shopify + Trendyol + Hepsiburada Total Revenue toplamı Net Ciro olarak görünür.
+orders_revenue_by_platform = (
+    orders.groupby("platform")["net_sales"].sum()
+    if (not orders.empty and "platform" in orders.columns and "net_sales" in orders.columns)
+    else pd.Series(dtype=float)
+)
+lines_revenue_by_platform = (
+    lines.groupby("platform")["line_revenue"].sum()
+    if (not lines.empty and "platform" in lines.columns and "line_revenue" in lines.columns)
+    else pd.Series(dtype=float)
+)
+revenue_platforms = sorted(set(orders_revenue_by_platform.index.astype(str)).union(set(lines_revenue_by_platform.index.astype(str))))
+revenue_reference_rows = []
+for platform_name in revenue_platforms:
+    line_total = float(lines_revenue_by_platform.get(platform_name, 0.0) or 0.0)
+    order_total = float(orders_revenue_by_platform.get(platform_name, 0.0) or 0.0)
+    chosen_total = line_total if abs(line_total) > 0 else order_total
+    revenue_reference_rows.append({
+        "platform": platform_name,
+        "total_revenue_for_net_ciro": chosen_total,
+        "order_net_sales_reference": order_total,
+        "line_revenue_reference": line_total,
+        "revenue_source_for_net_ciro": "line_revenue_total" if abs(line_total) > 0 else "order_net_sales_fallback",
+    })
+revenue_reference = pd.DataFrame(revenue_reference_rows)
+total_revenue = float(revenue_reference["total_revenue_for_net_ciro"].sum()) if not revenue_reference.empty else 0.0
 known_order_count = int(orders["order_count"].sum()) if not orders.empty and "order_count" in orders.columns else 0
 aov = safe_divide(total_revenue, known_order_count)
 gross_profit = float(lines["gross_profit"].sum()) if not lines.empty and "gross_profit" in lines.columns else total_revenue * 0.45
@@ -1326,6 +1365,22 @@ else:
     for col in ["gross_profit", "units", "line_revenue", "cost_match_ratio"]:
         platform_summary[col] = 0.0
 
+# Kanal tablosunda da Net Ciro aynı mantıkla gösterilsin:
+# panellerdeki Total Revenue = line_revenue varsa onu, yoksa order net_sales'i kullan.
+if not revenue_reference.empty:
+    platform_summary = platform_summary.merge(revenue_reference, on="platform", how="outer")
+    for c in ["net_revenue", "orders", "line_revenue", "gross_profit", "units", "cost_match_ratio", "total_revenue_for_net_ciro", "order_net_sales_reference", "line_revenue_reference"]:
+        if c in platform_summary.columns:
+            platform_summary[c] = pd.to_numeric(platform_summary[c], errors="coerce").fillna(0.0)
+    platform_summary["net_revenue"] = platform_summary["total_revenue_for_net_ciro"].fillna(0.0)
+    if "revenue_source_for_net_ciro" in platform_summary.columns:
+        platform_summary["revenue_source_for_net_ciro"] = platform_summary["revenue_source_for_net_ciro"].fillna("unknown")
+else:
+    platform_summary["total_revenue_for_net_ciro"] = 0.0
+    platform_summary["order_net_sales_reference"] = 0.0
+    platform_summary["line_revenue_reference"] = 0.0
+    platform_summary["revenue_source_for_net_ciro"] = "no_revenue"
+
 if not ads.empty:
     ads_by_platform = ads.groupby("platform", as_index=False).agg(
         ad_spend=("spend", "sum"),
@@ -1344,7 +1399,9 @@ if not platform_summary.empty:
     platform_summary["roas"] = platform_summary.apply(lambda r: safe_divide(r["ad_revenue"], r["ad_spend"]), axis=1)
     platform_summary = platform_summary[[
         "platform", "net_revenue", "orders", "line_revenue", "gross_profit", "units",
-        "ad_spend", "ad_revenue", "net_profit_after_ads", "aov", "roas", "cost_match_ratio", "data_scope", "sales_source", "ad_source"
+        "ad_spend", "ad_revenue", "net_profit_after_ads", "aov", "roas", "cost_match_ratio",
+        "revenue_source_for_net_ciro", "order_net_sales_reference", "line_revenue_reference",
+        "data_scope", "sales_source", "ad_source"
     ]]
 
 if not lines.empty:
@@ -1560,10 +1617,16 @@ st.caption(f"Rapor dönemi: {period_label}")
 for warning in model.get("warnings", []):
     st.info(warning)
 
-k1, k2, k3, k4, k5, k6 = st.columns(6)
-k1.metric("Net Ciro", money(total_revenue))
-k2.metric("Bilinen Sipariş", f"{known_order_count:,}")
-k3.metric("Hedef Gerçekleşme", pct(target_rate))
+k1, k2, k3 = st.columns([1.6, 1, 1])
+with k1:
+    st.metric("Net Ciro", money(total_revenue))
+    st.caption(f"Tam Net Ciro: {money(total_revenue)}")
+with k2:
+    st.metric("Bilinen Sipariş", f"{known_order_count:,}")
+with k3:
+    st.metric("Hedef Gerçekleşme", pct(target_rate))
+
+k4, k5, k6 = st.columns(3)
 k4.metric("Anlık Net Kar", money(net_profit_now))
 k5.metric("AOV", money(aov))
 k6.metric("ROAS", f"{overall_roas:.2f}")
@@ -1815,6 +1878,7 @@ with tab1:
         {"Metrik": "CAC", "Değer": money(cac)},
         {"Metrik": "LTV Tahmini", "Değer": money(ltv)},
         {"Metrik": "Aktif Gün Sayısı", "Değer": f"{active_days}"},
+        {"Metrik": "Net Ciro Hesap Mantığı", "Değer": "Platform Total Revenue toplamı: line_revenue varsa line_revenue, yoksa net_sales"},
     ])
     st.dataframe(summary_df, use_container_width=True, hide_index=True)
 
@@ -1827,6 +1891,7 @@ with tab2:
             "net_revenue": "{:,.2f} TL", "orders": "{:,.0f}", "line_revenue": "{:,.2f} TL", "gross_profit": "{:,.2f} TL",
             "units": "{:,.0f}", "ad_spend": "{:,.2f} TL", "ad_revenue": "{:,.2f} TL", "net_profit_after_ads": "{:,.2f} TL",
             "aov": "{:,.2f} TL", "roas": "{:.2f}", "cost_match_ratio": "{:.1%}",
+            "order_net_sales_reference": "{:,.2f} TL", "line_revenue_reference": "{:,.2f} TL",
         }), use_container_width=True, hide_index=True)
         fig = px.bar(platform_summary, x="platform", y="net_profit_after_ads", title="Kanal Bazlı Net Kâr")
         st.plotly_chart(fig, use_container_width=True)
