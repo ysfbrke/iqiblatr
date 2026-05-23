@@ -653,44 +653,153 @@ def load_shopify_sales() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.D
 # =========================================================
 # TRENDYOL LOADERS
 # =========================================================
+def is_trendyol_order_file(path: Path) -> bool:
+    """Trendyol panelindeki sipariş exportlarını yakalar.
+
+    Amaç: Yapay Zeka Net Ciro tarafında Trendyol'u, smartek_app panelindeki
+    Total Revenue mantığıyla okumak. Maliyet, mağaza raporu, reklam ve stok
+    dosyaları bu hesaba karışmaz.
+    """
+    name = normalize_text(path.name)
+    compact = name.replace(" ", "")
+    if path.suffix.lower() not in {".csv", ".xlsx", ".xls"}:
+        return False
+    if "trendyol" not in name:
+        return False
+    blocked = [
+        "maliyet", "manual weekly", "manual_weekly", "magaza raporu", "mağaza raporu",
+        "magazaraporu", "urun reklamlari", "ürün reklamları", "reklam", "meta",
+        "stok", "inventory", "store report",
+    ]
+    if any(b in name or b.replace(" ", "") in compact for b in blocked):
+        return False
+    return ("tedarikci" in name or "tedarikci siparisleri" in name or "siparis" in name or "sipariş" in name)
+
+
+def _score_trendyol_order_table(df: pd.DataFrame) -> int:
+    if df is None or df.empty:
+        return -1
+    order_col = find_col(df, ["Sipariş Numarası", "Siparis Numarasi", "Sipari? Numaras?", "Order Number", "Order ID"])
+    revenue_col = find_col(df, ["Faturalanacak Tutar", "Faturalanacak", "Satış Tutarı", "Satis Tutari", "Sat?? Tutar?", "Revenue", "Total"])
+    date_col = find_col(df, ["Sipariş Tarihi", "Siparis Tarihi", "Sipari? Tarihi", "Order Date"])
+    qty_col = find_col(df, ["Adet", "Quantity", "Qty"])
+    sku_col = find_col(df, ["Barkod", "Barcode", "SKU"])
+    product_col = find_col(df, ["Ürün Adı", "Ürün Ad", "Urun Adi", "Urun Ad", "Product"])
+    status_col = find_col(df, ["Sipariş Statüsü", "Siparis Statusu", "Sipari? Statüsü", "Status"])
+    score = 0
+    score += 5000 if order_col else 0
+    score += 5000 if revenue_col else 0
+    score += 1000 if date_col else 0
+    score += 700 if qty_col else 0
+    score += 500 if sku_col else 0
+    score += 500 if product_col else 0
+    score += 300 if status_col else 0
+    score += min(int(df.shape[1]), 200)
+    score += min(int(len(df)), 500)
+    return score
+
+
+def read_trendyol_order_export(path: Path) -> tuple[pd.DataFrame, str]:
+    """Trendyol Tedarikçi Siparişleri dosyasını en güvenli şekilde okur.
+
+    Neden özel okuyucu var?
+    - Bazı Trendyol dosyalarında ilk satır açıklama/KVKK satırı oluyor.
+    - CSV'ler genelde ';' ile ayrılıyor; fakat adres/metin kolonlarında virgül var.
+      Bu yüzden otomatik comma okuma yanlış tablo üretebiliyor.
+    - Bazı aylarda dosya başlığı 0. satırda, bazı aylarda 1. satırda gelebiliyor.
+    Bu fonksiyon 0-3 skiprows ve farklı encoding/ayırıcıları dener; gerçek sipariş
+    kolonlarını bulduğu en yüksek skorlu tabloyu seçer.
+    """
+    best_df = pd.DataFrame()
+    best_note = "no table"
+    best_score = -1
+
+    if path.suffix.lower() == ".csv":
+        encodings = ["utf-8-sig", "utf-8", "iso-8859-9", "cp1254", "latin1"]
+        # Trendyol için ';' kesin öncelikli. Virgül sadece yedek.
+        seps = [";", ",", "\t"]
+        for skip in range(0, 4):
+            for enc in encodings:
+                for sep in seps:
+                    try:
+                        df = pd.read_csv(path, encoding=enc, sep=sep, dtype=str, low_memory=False, skiprows=skip, keep_default_na=False)
+                        if df.shape[1] <= 1:
+                            continue
+                        df = df.loc[:, ~df.columns.duplicated()].copy()
+                        score = _score_trendyol_order_table(df)
+                        # ';' ile bulunan tabloyu eşitlikte öne al.
+                        if sep == ";":
+                            score += 50
+                        if score > best_score:
+                            best_df = df
+                            best_note = f"csv sep={sep!r}, encoding={enc}, skiprows={skip}, score={score}"
+                            best_score = score
+                    except Exception:
+                        continue
+    elif path.suffix.lower() in {".xlsx", ".xls"}:
+        for skip in range(0, 4):
+            try:
+                df = pd.read_excel(path, dtype=str, skiprows=skip).fillna("")
+                if df.shape[1] <= 1:
+                    continue
+                df = df.loc[:, ~df.columns.duplicated()].copy()
+                score = _score_trendyol_order_table(df)
+                if score > best_score:
+                    best_df = df
+                    best_note = f"excel skiprows={skip}, score={score}"
+                    best_score = score
+            except Exception:
+                continue
+
+    # En az sipariş no + ciro kolonu bulunmalı.
+    if best_score < 10000:
+        return pd.DataFrame(), best_note
+    return best_df, best_note
+
+
 @st.cache_data(show_spinner=False)
 def load_trendyol_sales() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     costs = load_cost_table(TRENDYOL_DIR, "Trendyol")
     line_frames = []
     debug_rows = []
 
-    for path in list_data_files(TRENDYOL_DIR):
-        # Trendyol paneli sipariş dosyalarında CSV exportlarını baz alıyor.
-        # Aynı raporun XLSX kopyası klasörde durursa çift sayım/duble sipariş oluşmaması için atlıyoruz.
-        if path.suffix.lower() != ".csv":
+    candidate_files = [p for p in list_data_files(TRENDYOL_DIR, include_excel=True) if is_trendyol_order_file(p)]
+
+    # Aynı rapor hem CSV hem XLSX olarak varsa CSV'yi tercih et; çift sayımı engelle.
+    csv_keys = {normalize_text(p.stem).replace("xlsx", "").replace("csv", "") for p in candidate_files if p.suffix.lower() == ".csv"}
+    filtered_files = []
+    for p in candidate_files:
+        key = normalize_text(p.stem).replace("xlsx", "").replace("csv", "")
+        if p.suffix.lower() in {".xlsx", ".xls"} and key in csv_keys:
+            debug_rows.append({"platform": "Trendyol", "source_file": p.name, "status": "atlanıyor", "rows": 0, "note": "Aynı raporun CSV kopyası bulunduğu için XLSX çift sayımı önlemek adına atlandı."})
             continue
-        lname = normalize_text(path.name)
-        if "maliyet" in lname or "manual weekly" in lname or "manual_weekly" in lname or "magaza raporu" in lname or "mağaza raporu" in lname:
-            continue
-        if "trendyol" not in lname:
-            continue
-        if not ("tedarikci" in lname or "siparis" in lname or "sipariş" in lname):
+        filtered_files.append(p)
+
+    for path in filtered_files:
+        df, read_note = read_trendyol_order_export(path)
+        if df.empty:
+            debug_rows.append({"platform": "Trendyol", "source_file": path.name, "status": "okunamadı", "rows": 0, "note": read_note})
             continue
 
-        # Trendyol Tedarikçi Siparişleri exportlarında ilk satır KVKK/açıklama satırı olabiliyor.
-        # Trendyol paneli bu dosyaları skiprows=1 ile okuyor; Yapay Zeka da aynı mantığı kullanmalı.
-        df = read_table_flexible(path, skiprows=1)
-        if df.empty:
-            df = read_table_try_skiprows(path, max_skip=2)
-        if df.empty:
-            debug_rows.append({"platform": "Trendyol", "source_file": path.name, "status": "okunamadı", "rows": 0, "note": "Dosya boş veya format tanınmadı."})
-            continue
-
-        date_col = find_col(df, ["Sipari? Tarihi", "Sipariş Tarihi", "Siparis Tarihi", "Order Date"])
-        order_col = find_col(df, ["Sipari? Numaras?", "Sipariş Numarası", "Siparis Numarasi", "Order Number", "Order ID"])
+        date_col = find_col(df, ["Sipariş Tarihi", "Siparis Tarihi", "Sipari? Tarihi", "Order Date"])
+        order_col = find_col(df, ["Sipariş Numarası", "Siparis Numarasi", "Sipari? Numaras?", "Order Number", "Order ID"])
         qty_col = find_col(df, ["Adet", "Quantity", "Qty"])
-        status_col = find_col(df, ["Sipari? Statüsü", "Sipariş Statüsü", "Siparis Statusu", "Status"])
-        sku_col = find_col(df, ["Barkod", "SKU", "Barcode"])
-        product_col = find_col(df, ["Ürün Ad?", "Ürün Adı", "Ürün Ad", "Urun Adi", "Urun Ad", "Product"])
-        revenue_col = find_col(df, ["Faturalanacak Tutar", "Sat?? Tutar?", "Satış Tutarı", "Satis Tutari", "Revenue", "Total"])
+        status_col = find_col(df, ["Sipariş Statüsü", "Siparis Statusu", "Sipari? Statüsü", "Status"])
+        sku_col = find_col(df, ["Barkod", "Barcode", "SKU"])
+        product_col = find_col(df, ["Ürün Adı", "Ürün Ad", "Urun Adi", "Urun Ad", "Product"])
+        # Trendyol panelindeki Total Revenue için ana kaynak Faturalanacak Tutar.
+        revenue_col = find_col(df, ["Faturalanacak Tutar", "Faturalanacak", "Revenue", "Total"])
+        if not revenue_col:
+            revenue_col = find_col(df, ["Satış Tutarı", "Satis Tutari", "Sat?? Tutar?"])
 
         if not order_col or not revenue_col:
-            debug_rows.append({"platform": "Trendyol", "source_file": path.name, "status": "atlanıyor", "rows": len(df), "note": "Sipariş no veya ciro kolonu bulunamadı."})
+            debug_rows.append({
+                "platform": "Trendyol",
+                "source_file": path.name,
+                "status": "atlanıyor",
+                "rows": len(df),
+                "note": f"Sipariş no veya ciro kolonu bulunamadı. {read_note}. Kolonlar: {', '.join(map(str, list(df.columns)[:12]))}",
+            })
             continue
 
         lines = pd.DataFrame({
@@ -705,18 +814,28 @@ def load_trendyol_sales() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.
             "source_file": path.name,
             "data_scope": "order_level",
         })
-        returned = lines["status"].str.contains("ade|iptal|cancel|return", case=False, na=False)
+        lines = lines[lines["order_id"].astype(str).str.strip() != ""].copy()
+        returned = lines["status"].str.contains("ade|iade|iptal|cancel|return", case=False, na=False)
         lines.loc[returned, ["qty", "line_revenue"]] = 0.0
-        lines = lines[lines["order_id"].astype(str).str.strip() != ""]
+        file_total = float(lines["line_revenue"].sum())
         line_frames.append(lines)
-        debug_rows.append({"platform": "Trendyol", "source_file": path.name, "status": "okundu", "rows": len(lines), "note": "Sipariş dosyası."})
+        debug_rows.append({
+            "platform": "Trendyol",
+            "source_file": path.name,
+            "status": "okundu",
+            "rows": len(lines),
+            "note": f"{read_note}. revenue_col={revenue_col}. file_total_revenue={file_total:,.2f} TL",
+        })
 
-    lines_all = pd.concat(line_frames, ignore_index=True) if line_frames else pd.DataFrame(columns=["platform", "order_id", "order_date", "product_name", "sku", "qty", "line_revenue", "source_file", "data_scope"])
+    lines_all = pd.concat(line_frames, ignore_index=True) if line_frames else pd.DataFrame(columns=["platform", "order_id", "order_date", "product_name", "sku", "qty", "line_revenue", "status", "source_file", "data_scope"])
     if not lines_all.empty:
+        before = len(lines_all)
         lines_all = lines_all.drop_duplicates(subset=["order_id", "order_date", "product_name", "sku", "qty", "line_revenue"], keep="first")
+        after = len(lines_all)
+        if before != after:
+            debug_rows.append({"platform": "Trendyol", "source_file": "ALL", "status": "dedupe", "rows": after, "note": f"Tekrarlı satırlar düşüldü: {before-after} satır."})
         lines_all = apply_costs(lines_all, costs, "Trendyol")
-        # Trendyol panelindeki Total Revenue / Order Count mantığı: iade/iptal satırları hariç tutulur.
-        valid_lines_for_orders = lines_all[~lines_all["status"].astype(str).str.contains("ade|iptal|cancel|return", case=False, na=False)].copy()
+        valid_lines_for_orders = lines_all[~lines_all["status"].astype(str).str.contains("ade|iade|iptal|cancel|return", case=False, na=False)].copy()
         orders = valid_lines_for_orders.groupby("order_id", as_index=False).agg(
             platform=("platform", "first"),
             order_date=("order_date", "first"),
@@ -725,8 +844,10 @@ def load_trendyol_sales() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.
             data_scope=("data_scope", "first"),
         )
         orders["order_count"] = 1.0
+        debug_rows.append({"platform": "Trendyol", "source_file": "TOTAL", "status": "panel_total_revenue", "rows": len(orders), "note": f"Trendyol Panel Total Revenue = {float(orders['net_sales'].sum()):,.2f} TL"})
     else:
         orders = pd.DataFrame(columns=["platform", "order_id", "order_date", "net_sales", "source_file", "data_scope", "order_count"])
+        debug_rows.append({"platform": "Trendyol", "source_file": "TOTAL", "status": "no_data", "rows": 0, "note": "Trendyol sipariş dosyası okunamadı veya bulunamadı."})
     return orders, lines_all, costs, pd.DataFrame(debug_rows)
 
 
