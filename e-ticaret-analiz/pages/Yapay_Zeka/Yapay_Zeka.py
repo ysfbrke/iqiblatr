@@ -271,19 +271,57 @@ def list_data_files(folder: Path, include_excel: bool = True) -> list[Path]:
     return sorted([p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in suffixes])
 
 
+def _table_header_score(df: pd.DataFrame) -> int:
+    """
+    CSV ayırıcı seçimini güvenli yapar.
+    Sorunun nedeni: Trendyol dosyaları noktalı virgül ayrımlı olmasına rağmen
+    adres/metin alanlarında virgül geçtiği için pandas yanlışlıkla comma ayrımıyla da
+    çok kolonlu bir tablo üretebiliyor. Bu fonksiyon gerçek başlığı seçmek için
+    kolon adlarında beklenen e-ticaret kelimelerini arar.
+    """
+    if df is None or df.empty:
+        return -1
+    header_text = " ".join(normalize_text(c) for c in df.columns)
+    compact_header = header_text.replace(" ", "")
+    keywords = [
+        "siparis", "sipariş", "barkod", "faturalanacak", "satis tutari", "satış tutarı",
+        "created at", "lineitem", "financial status", "total", "refunded amount",
+        "toplam satis", "toplam satış", "urun adi", "ürün adı", "sku", "komisyon",
+        "harcanan tutar", "amount spent", "campaign", "kampanya", "reklam", "roas",
+    ]
+    hits = 0
+    for key in keywords:
+        nk = normalize_text(key)
+        if nk in header_text or nk.replace(" ", "") in compact_header:
+            hits += 1
+
+    unnamed_penalty = sum(1 for c in df.columns if str(c).lower().startswith("unnamed"))
+    # keyword > kolon sayısı. Böylece yanlış virgül ayrımı yerine gerçek başlık seçilir.
+    return hits * 1000 + min(int(df.shape[1]), 200) - unnamed_penalty * 3
+
+
 def read_csv_flexible(path: Path | str, *, skiprows: int = 0) -> pd.DataFrame:
     encodings = ["utf-8-sig", "utf-8", "iso-8859-9", "cp1254", "latin1"]
-    seps = [",", ";", "\t"]
+    # Türkiye panel exportlarında genellikle ; kullanılıyor. Shopify/Meta için comma da deneniyor.
+    seps = [";", ",", "\t"]
+    best_df = pd.DataFrame()
+    best_score = -1
+
     for enc in encodings:
         for sep in seps:
             try:
                 df = pd.read_csv(path, encoding=enc, sep=sep, dtype=str, low_memory=False, skiprows=skiprows)
-                if df.shape[1] > 1:
-                    df = df.loc[:, ~df.columns.duplicated()].copy()
-                    return df
+                if df.shape[1] <= 1:
+                    continue
+                df = df.loc[:, ~df.columns.duplicated()].copy()
+                score = _table_header_score(df)
+                if score > best_score:
+                    best_df = df
+                    best_score = score
             except Exception:
                 continue
-    return pd.DataFrame()
+
+    return best_df if best_score >= 0 else pd.DataFrame()
 
 
 def read_table_flexible(path: Path | str, *, skiprows: int = 0) -> pd.DataFrame:
@@ -308,7 +346,7 @@ def read_table_try_skiprows(path: Path | str, max_skip: int = 2) -> pd.DataFrame
         df = read_table_flexible(path, skiprows=skip)
         if df.empty:
             continue
-        score = sum(1 for c in df.columns if normalize_text(c)) + df.shape[1]
+        score = _table_header_score(df)
         if score > best_score:
             best = df
             best_score = score
