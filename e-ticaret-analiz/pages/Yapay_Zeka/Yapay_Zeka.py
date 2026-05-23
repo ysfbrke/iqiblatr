@@ -786,7 +786,7 @@ Veri:
 {context}
 Kullanıcı sorusu: {question}
 """
-                response = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
+                response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
                 st.markdown(response.text)
             except Exception as exc:
                 st.warning(f"Gemini çalışmadı, yerel yorum veriyorum: {exc}")
