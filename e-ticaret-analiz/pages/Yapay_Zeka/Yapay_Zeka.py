@@ -586,7 +586,24 @@ def load_shopify_sales() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.D
     lines_all = pd.concat(line_frames, ignore_index=True) if line_frames else pd.DataFrame(columns=["platform", "order_id", "order_date", "product_name", "sku", "qty", "line_revenue", "source_file", "data_scope"])
 
     if not orders_all.empty:
-        orders_all = orders_all.drop_duplicates(subset=["order_id"], keep="first")
+        # Aynı Shopify siparişi birden fazla günlük export içinde tekrar gelebilir.
+        # Paneldeki doğru Net Sales mantığını korumak için sipariş bazında tekilleştiriyoruz.
+        # Eğer aynı sipariş herhangi bir dosyada voided/cancelled görünüyorsa ciro ve sipariş adedi 0 kabul edilir.
+        fixed_order_rows = []
+        for order_id, g in orders_all.groupby("order_id", dropna=False):
+            g = g.copy()
+            row = g.iloc[0].copy()
+            any_cancelled = bool(g["is_cancelled"].fillna(False).astype(bool).any()) if "is_cancelled" in g.columns else False
+            if any_cancelled:
+                row["is_cancelled"] = True
+                row["net_sales"] = 0.0
+                row["order_count"] = 0.0
+            else:
+                numeric_sales = pd.to_numeric(g["net_sales"], errors="coerce").fillna(0.0)
+                row["net_sales"] = float(numeric_sales.max())
+                row["order_count"] = 1.0
+            fixed_order_rows.append(row)
+        orders_all = pd.DataFrame(fixed_order_rows).reset_index(drop=True)
     if not lines_all.empty:
         lines_all = lines_all.drop_duplicates(subset=["order_id", "order_date", "product_name", "sku", "qty", "line_revenue"], keep="first")
         lines_all = apply_costs(lines_all, costs, "Shopify")
@@ -604,6 +621,10 @@ def load_trendyol_sales() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.
     debug_rows = []
 
     for path in list_data_files(TRENDYOL_DIR):
+        # Trendyol paneli sipariş dosyalarında CSV exportlarını baz alıyor.
+        # Aynı raporun XLSX kopyası klasörde durursa çift sayım/duble sipariş oluşmaması için atlıyoruz.
+        if path.suffix.lower() != ".csv":
+            continue
         lname = normalize_text(path.name)
         if "maliyet" in lname or "manual weekly" in lname or "manual_weekly" in lname or "magaza raporu" in lname or "mağaza raporu" in lname:
             continue
@@ -612,18 +633,22 @@ def load_trendyol_sales() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.
         if not ("tedarikci" in lname or "siparis" in lname or "sipariş" in lname):
             continue
 
-        df = read_table_try_skiprows(path, max_skip=2)
+        # Trendyol Tedarikçi Siparişleri exportlarında ilk satır KVKK/açıklama satırı olabiliyor.
+        # Trendyol paneli bu dosyaları skiprows=1 ile okuyor; Yapay Zeka da aynı mantığı kullanmalı.
+        df = read_table_flexible(path, skiprows=1)
+        if df.empty:
+            df = read_table_try_skiprows(path, max_skip=2)
         if df.empty:
             debug_rows.append({"platform": "Trendyol", "source_file": path.name, "status": "okunamadı", "rows": 0, "note": "Dosya boş veya format tanınmadı."})
             continue
 
-        date_col = find_col(df, ["Sipariş Tarihi", "Siparis Tarihi", "Order Date"])
-        order_col = find_col(df, ["Sipariş Numarası", "Siparis Numarasi", "Order Number", "Order ID"])
+        date_col = find_col(df, ["Sipari? Tarihi", "Sipariş Tarihi", "Siparis Tarihi", "Order Date"])
+        order_col = find_col(df, ["Sipari? Numaras?", "Sipariş Numarası", "Siparis Numarasi", "Order Number", "Order ID"])
         qty_col = find_col(df, ["Adet", "Quantity", "Qty"])
-        status_col = find_col(df, ["Sipariş Statüsü", "Siparis Statusu", "Status"])
+        status_col = find_col(df, ["Sipari? Statüsü", "Sipariş Statüsü", "Siparis Statusu", "Status"])
         sku_col = find_col(df, ["Barkod", "SKU", "Barcode"])
-        product_col = find_col(df, ["Ürün Adı", "Ürün Ad", "Urun Adi", "Urun Ad", "Product"])
-        revenue_col = find_col(df, ["Faturalanacak Tutar", "Satış Tutarı", "Satis Tutari", "Revenue", "Total"])
+        product_col = find_col(df, ["Ürün Ad?", "Ürün Adı", "Ürün Ad", "Urun Adi", "Urun Ad", "Product"])
+        revenue_col = find_col(df, ["Faturalanacak Tutar", "Sat?? Tutar?", "Satış Tutarı", "Satis Tutari", "Revenue", "Total"])
 
         if not order_col or not revenue_col:
             debug_rows.append({"platform": "Trendyol", "source_file": path.name, "status": "atlanıyor", "rows": len(df), "note": "Sipariş no veya ciro kolonu bulunamadı."})
@@ -651,7 +676,9 @@ def load_trendyol_sales() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.
     if not lines_all.empty:
         lines_all = lines_all.drop_duplicates(subset=["order_id", "order_date", "product_name", "sku", "qty", "line_revenue"], keep="first")
         lines_all = apply_costs(lines_all, costs, "Trendyol")
-        orders = lines_all.groupby("order_id", as_index=False).agg(
+        # Trendyol panelindeki Total Revenue / Order Count mantığı: iade/iptal satırları hariç tutulur.
+        valid_lines_for_orders = lines_all[~lines_all["status"].astype(str).str.contains("ade|iptal|cancel|return", case=False, na=False)].copy()
+        orders = valid_lines_for_orders.groupby("order_id", as_index=False).agg(
             platform=("platform", "first"),
             order_date=("order_date", "first"),
             net_sales=("line_revenue", "sum"),
